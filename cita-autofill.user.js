@@ -2150,7 +2150,7 @@
     supportLink.href = 'https://t.me/edlevina';
     supportLink.target = '_blank';
     supportLink.rel = 'noopener noreferrer';
-    supportLink.textContent = L('Написать в поддержку', 'Contact Author Support (Telegram)');
+    supportLink.textContent = L('Написать автору оригинала (Telegram)', 'Contact Original Author (Telegram)');
     supportLink.className = 'ck-btn ck-btn-secondary';
     supportLink.style.cssText = 'display:block;text-decoration:none;font-size:11px;margin-top:6px;padding:6px 8px';
     box.appendChild(supportLink);
