@@ -579,8 +579,11 @@
 
   // Пишем каждую запись журнала в файл через хелпер — чтобы полная история
   // проверок жила на диске (ИИ-сессии могут её читать для контекста), а не
-  // только в localStorage вкладки. Хелпер не запущен → тихо пропускаем.
+  // только в localStorage вкладки. Хелпер есть только на macOS → на других ОС
+  // не опрашиваем локальный сервер и сразу используем встроенный голос браузера.
+  const isMac = /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || '');
   function sendJournal(entry) {
+    if (!isMac) return;
     try {
       const label = logLabelText(entry.s);
       const line = new Date(entry.t).toLocaleString('ru') + '\t' + label +
@@ -600,7 +603,7 @@
   // он снимается заново — две капчи в 11:01:11 и 11:01:42 дадут два файла).
   const snapped = {};
   function snapOnce(kind, note) {
-    if (snapped[kind]) return;
+    if (!isMac || snapped[kind]) return;
     snapped[kind] = true;
     try {
       const text = (document.body ? document.body.innerText : '').trim().slice(0, 40000);
@@ -615,6 +618,7 @@
 
   let helperOk = null; // null = не проверяли, true/false
   function pingHelper() {
+    if (!isMac) return Promise.resolve(false);
     return gmGet(CONFIG.alertServer + '/ping', 2500)
       .then(() => { helperOk = true; renderStats(); return true; })
       .catch(() => { helperOk = false; renderStats(); return false; });
@@ -623,6 +627,7 @@
   // Пульс сторожу: хелпер знает, когда должна быть следующая проверка,
   // и голосом зовёт человека, если чекер замолчал (вкладку заморозили/закрыли).
   function sendBeat() {
+    if (!isMac) return;
     const on = driving() ? 1 : 0;
     const nextAt = parseInt(SS.get('nextAt') || '0', 10);
     const due = on ? (nextAt || (Date.now() + RUN.intervalMaxMin * 60000)) : 0;
@@ -649,6 +654,10 @@
   }
 
   async function fireAlert(kind, msg) {
+    if (!isMac) {
+      if (kind !== 'error') browserFallbackAlert(kind);
+      return;
+    }
     const q = '/alert?kind=' + encodeURIComponent(kind) +
       (msg ? '&msg=' + encodeURIComponent(msg) : '');
     for (let i = 0; i < 3; i++) {
@@ -2069,6 +2078,7 @@
   function sendFoundSnapshot() {
     const s = buildFoundSnapshot();
     if (!s) return null;
+    if (!isMac) { downloadSnapshot(s); return s.name; }
     gmPost(CONFIG.alertServer + '/htmlsnap?name=' + encodeURIComponent(s.name), s.html, 8000)
       .then(() => { helperOk = true; })
       .catch(() => { helperOk = false; downloadSnapshot(s); }); // хелпер молчит — в Downloads
