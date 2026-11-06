@@ -1,4 +1,5 @@
 # Cita Por Favor (EN / RU)
+<img width="376" height="707" alt="image" src="https://github.com/user-attachments/assets/b3c4982b-28d2-4dce-92d8-c977ab9bf475" />
 
 A local browser assistant for checking appointment (`cita previa`) availability in **Barcelona province** for:
 - **TIE Fingerprints (`Toma de Huellas`)** — initial card or renewal after *Resolución Favorable*
