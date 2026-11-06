@@ -1055,6 +1055,41 @@
       }
       #ck-panel-root summary.ck-acc-hdr::-webkit-details-marker { display: none; }
       #ck-panel-root summary.ck-acc-hdr { list-style: none; }
+      #ck-panel-root .ck-seg {
+        display: flex;
+        gap: 4px;
+        padding: 3px;
+        margin-top: 8px;
+        background: ${THEME.bgNested};
+        border: 1px solid ${THEME.border};
+        border-radius: 7px;
+        box-sizing: border-box;
+      }
+      #ck-panel-root .ck-seg-chip {
+        flex: 1;
+        padding: 5px 8px;
+        border: 1px solid transparent;
+        border-radius: 5px;
+        background: transparent;
+        color: ${THEME.textSecondary};
+        font: 600 11.5px/1.3 system-ui, -apple-system, sans-serif;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+        text-align: center;
+      }
+      #ck-panel-root .ck-seg-chip:hover {
+        color: ${THEME.textPrimary};
+      }
+      #ck-panel-root .ck-seg-chip.ck-active-rhythm {
+        background: ${THEME.bgSection};
+        border-color: ${THEME.accent};
+        color: ${THEME.textPrimary};
+      }
+      #ck-panel-root .ck-seg-chip.ck-active-boost {
+        background: ${THEME.bgSection};
+        border-color: ${THEME.warning};
+        color: ${THEME.warning};
+      }
       #ck-panel-root input[type="checkbox"],
       #ck-panel-root input[type="radio"] {
         accent-color: ${THEME.accent};
@@ -1069,6 +1104,8 @@
 
   let stateEl = null, statusEl = null, statsEl = null, settingsLineEl = null;
   let runBtn = null, boostCapEl = null, boostLabelEl = null;
+  let rhythmChipEl = null, boostChipEl = null, rhythmAccHdr = null, boostAccHdr = null;
+  let rhythmFormRef = null, boostFormRef = null, setFormOpenFn = null;
   let stepToggle = null, stepGoBtn = null, imHereBtn = null;
   function status(msg, color) {
     if (statusEl) { statusEl.textContent = msg; statusEl.style.color = mapThemeColor(color); }
@@ -1076,6 +1113,7 @@
   // строка режима (●): v9.2 — живёт в секции «Ритмичная проверка», рядом с
   // кнопкой старт/стоп; наверху панели осталась только строка активности
   function renderState() {
+    const isBoost = boostMode();
     if (stateEl) {
       let txt, color;
       if (foundMode()) { txt = L('● СИТЫ НАЙДЕНЫ — доделываем вместе', '● SLOTS FOUND — finishing together'); color = THEME.success; }
@@ -1092,12 +1130,23 @@
       runBtn.textContent = on ? L('Остановить проверку', 'Stop Checking') : L('Запустить проверку', 'Start Checking');
       runBtn.className = 'ck-btn ' + (on ? 'ck-btn-danger' : 'ck-btn-primary');
     }
-    if (boostCapEl) boostCapEl.style.display = (rhythmOn() && boostMode()) ? 'block' : 'none';
-    if (boostLabelEl)
-      boostLabelEl.textContent = L(
-        'Форсаж — ускоренная проверка каждые ' + RUN.boostSec + ' сек (интервал — в настройках форсажа)',
-        'Boost — fast check every ' + RUN.boostSec + ' sec (interval in Boost settings)'
-      );
+    if (rhythmChipEl && boostChipEl) {
+      rhythmChipEl.className = 'ck-seg-chip' + (!isBoost ? ' ck-active-rhythm' : '');
+      boostChipEl.className = 'ck-seg-chip' + (isBoost ? ' ck-active-boost' : '');
+      rhythmChipEl.setAttribute('aria-pressed', !isBoost ? 'true' : 'false');
+      boostChipEl.setAttribute('aria-pressed', isBoost ? 'true' : 'false');
+      boostChipEl.textContent = L('⚡ Форсаж (' + RUN.boostSec + 'с)', '⚡ Boost (' + RUN.boostSec + 's)');
+    }
+    if (rhythmAccHdr && boostAccHdr) {
+      rhythmAccHdr.style.display = !isBoost ? 'flex' : 'none';
+      boostAccHdr.style.display = isBoost ? 'flex' : 'none';
+      if (isBoost && rhythmFormRef && rhythmFormRef.style.display !== 'none' && setFormOpenFn) {
+        setFormOpenFn(rhythmFormRef, false);
+      } else if (!isBoost && boostFormRef && boostFormRef.style.display !== 'none' && setFormOpenFn) {
+        setFormOpenFn(boostFormRef, false);
+      }
+    }
+    if (boostCapEl) boostCapEl.style.display = (rhythmOn() && isBoost) ? 'block' : 'none';
     if (stepToggle) {
       const s = stepMode();
       stepToggle.textContent = s ? L('Выключить пошаговый режим', 'Disable Step-by-Step Mode') : L('Включить пошаговый режим', 'Enable Step-by-Step Mode');
@@ -1438,20 +1487,19 @@
     };
     box.appendChild(nowBtn);
 
-    // Галочка форсажа (под кнопками запуска)
-    const boostRow = document.createElement('label');
-    boostRow.style.cssText = checkRowCss + ';margin-top:8px;padding:6px 8px;background:' + THEME.bgNested +
-      ';border:1px solid ' + THEME.border + ';border-radius:6px';
-    const boostCb = document.createElement('input');
-    boostCb.type = 'checkbox';
-    boostCb.checked = boostMode();
-    boostCb.style.cssText = 'margin:2px 0 0;flex:none';
-    boostRow.appendChild(boostCb);
-    boostLabelEl = document.createElement('span');
-    boostLabelEl.style.cssText = 'margin:0;color:' + THEME.textSecondary + ';font-size:11px';
-    boostRow.appendChild(boostLabelEl);
-    boostCb.onchange = () => {
-      if (boostCb.checked) {
+    // Переключатель темпа (2 чипа: «⏱ Ритм» | «⚡ Форсаж»).
+    // Показываем аккордеон настроек ТОЛЬКО для выбранного режима.
+    const modeSeg = document.createElement('div');
+    modeSeg.className = 'ck-seg';
+    rhythmChipEl = document.createElement('button');
+    rhythmChipEl.type = 'button';
+    rhythmChipEl.textContent = L('⏱ По ритму', '⏱ Rhythm');
+    boostChipEl = document.createElement('button');
+    boostChipEl.type = 'button';
+    boostChipEl.textContent = L('⚡ Форсаж (' + RUN.boostSec + 'с)', '⚡ Boost (' + RUN.boostSec + 's)');
+    function selectPaceMode(enableBoost) {
+      if (enableBoost === boostMode()) return;
+      if (enableBoost) {
         SS.set('boost', '1');
         if (rhythmOn()) { // ритм шёл — переключаем его темп на форсаж сразу
           SS.set('boostRun', '1');
@@ -1465,10 +1513,16 @@
         SS.del('boost'); SS.del('boostRun');
         if (rhythmOn() && (waiting || stopped)) // ритм возвращается к своему темпу
           scheduleNext(jitteredDelayMs(), L('Ритм возобновлён', 'Rhythm resumed'));
+        else
+          status(L('⏱ Режим: обычный ритм проверки', '⏱ Mode: normal check rhythm'), THEME.textSecondary);
       }
       renderState();
-    };
-    box.appendChild(boostRow);
+    }
+    rhythmChipEl.onclick = () => selectPaceMode(false);
+    boostChipEl.onclick = () => selectPaceMode(true);
+    modeSeg.appendChild(rhythmChipEl);
+    modeSeg.appendChild(boostChipEl);
+    box.appendChild(modeSeg);
 
     // подпись: ритм формально идёт, но его темп подменён форсажем
     boostCapEl = document.createElement('div');
@@ -1476,11 +1530,17 @@
     boostCapEl.textContent = L('Ритмичная проверка на паузе из-за режима форсаж', 'Normal rhythm is paused while Boost mode is active');
     box.appendChild(boostCapEl);
 
+    setFormOpenFn = setFormOpen;
+    rhythmFormRef = rhythmForm;
+    boostFormRef = boostForm;
+
     const boostOpenBtn = mkAccordionHeader('⚡', L('Настройки форсажа', 'Boost Settings'), boostForm);
+    boostAccHdr = boostOpenBtn;
     box.appendChild(boostOpenBtn);
     box.appendChild(boostForm);
 
     const rhythmOpenBtn = mkAccordionHeader('⏱', L('Настроить ритм проверки', 'Configure Check Rhythm'), rhythmForm, () => fillRhythmInputs());
+    rhythmAccHdr = rhythmOpenBtn;
     box.appendChild(rhythmOpenBtn);
     box.appendChild(rhythmForm);
 
@@ -1497,24 +1557,16 @@
     box.appendChild(dataBtn);
     box.appendChild(settingsForm);
 
-    // ---- секция «Утилиты и диагностика» (Utilities & Diagnostics) ----
+    // ---- секция «Утилиты и диагностика» (сворачиваемый блок) ----
     box.appendChild(sectionTitle(L('Инструменты и диагностика', 'Utilities & Diagnostics')));
 
-    // Пошаговый режим (v9.0 — с главной панели): замораживает ритм, как форсаж
-    stepToggle = mkBtn(L('Включить пошаговый режим', 'Enable Step-by-Step Mode'), 'secondary');
-    stepToggle.onclick = () => {
-      if (stepMode()) { SS.del('step'); fillStepQueue = null; } // выход из пошагового — очередь не нужна
-      else { SS.set('step', '1'); status(L('👣 Пошагово: ритм заморожен — жми «Следующий шаг»', '👣 Step-by-step: rhythm paused — click "Next Step"'), THEME.warning); }
-      renderState();
-    };
-    box.appendChild(stepToggle);
+    // Кнопки экстренного/активного действия («Следующий шаг» при пошаговом и «Я тут»)
+    // держим снаружи сворачиваемого блока, чтобы они всегда были видны, когда активны.
     stepGoBtn = mkBtn(L('Следующий шаг', 'Next Step'), 'primary');
     stepGoBtn.onclick = () => {
       stopped = false; waiting = false;
       const nextAt = parseInt(SS.get('nextAt') || '0', 10);
       if (nextAt) { SS.del('nextAt'); startNewCheck(); return; }
-      // v9.25.1: на экранах заполнения (заявитель/телефон) tick шагов не знает —
-      // исполняем следующий из очереди fillHumanly, по одному на нажатие
       if (fillStepQueue && fillStepQueue.length) {
         fillStepQueue.shift()();
         status(fillStepQueue.length
@@ -1527,17 +1579,51 @@
     };
     box.appendChild(stepGoBtn);
 
-    // На страницу выбора офиса: смена офиса/услуги руками (настройки действуют
-    // на НОВУЮ проверку, уже открытую форму они не меняют)
+    const utilDetails = document.createElement('details');
+    utilDetails.style.cssText = 'margin-top:4px;font:12px system-ui,sans-serif';
+    if (stepMode()) utilDetails.open = true;
+    const utilSummary = document.createElement('summary');
+    utilSummary.className = 'ck-acc-hdr';
+    utilSummary.style.marginTop = '0';
+    const utilSummaryLeft = document.createElement('span');
+    utilSummaryLeft.style.cssText = 'display:flex;align-items:center;gap:7px;min-width:0';
+    const utilSummaryIcon = document.createElement('span');
+    utilSummaryIcon.style.cssText = 'font-size:12px;flex:none';
+    utilSummaryIcon.textContent = '🛠';
+    const utilSummaryText = document.createElement('span');
+    utilSummaryText.textContent = L('Открыть инструменты и журнал', 'Tools, Voice Test & Check Log');
+    utilSummaryLeft.appendChild(utilSummaryIcon);
+    utilSummaryLeft.appendChild(utilSummaryText);
+    const utilSummaryChev = document.createElement('span');
+    utilSummaryChev.className = 'ck-acc-chev';
+    utilSummaryChev.textContent = '▸';
+    utilSummary.appendChild(utilSummaryLeft);
+    utilSummary.appendChild(utilSummaryChev);
+    utilDetails.appendChild(utilSummary);
+
+    const utilBody = document.createElement('div');
+    utilBody.className = 'ck-acc-body';
+
+    // Пошаговый режим (замораживает ритм, как форсаж)
+    stepToggle = mkBtn(L('Включить пошаговый режим', 'Enable Step-by-Step Mode'), 'secondary');
+    stepToggle.style.marginTop = '2px';
+    stepToggle.onclick = () => {
+      if (stepMode()) { SS.del('step'); fillStepQueue = null; } // выход из пошагового — очередь не нужна
+      else { SS.set('step', '1'); status(L('👣 Пошагово: ритм заморожен — жми «Следующий шаг»', '👣 Step-by-step: rhythm paused — click "Next Step"'), THEME.warning); }
+      renderState();
+    };
+    utilBody.appendChild(stepToggle);
+
+    // На страницу выбора офиса: смена офиса/услуги руками
     const firstBtn = mkBtn(L('Перейти на страницу выбора офиса', 'Go to Office Selection Page'), 'secondary');
     firstBtn.onclick = () => {
       location.replace(SS.get('startUrl') || DEFAULT_START);
     };
-    box.appendChild(firstBtn);
+    utilBody.appendChild(firstBtn);
 
     const testBtn = mkBtn(L('Проверить голосовое оповещение', 'Test Voice Alert'), 'secondary');
     testBtn.onclick = () => fireAlert('test');
-    box.appendChild(testBtn);
+    utilBody.appendChild(testBtn);
 
     // ---- «Мои данные» и «Настройки поиска»: два раздела (v7.31) ----
     // Поле с подписью: label над input'ом, оба на всю ширину панели
@@ -2097,7 +2183,7 @@
     const logBox = document.createElement('pre');
     logBox.style.cssText =
       'display:none;margin:6px 0 0;padding:8px 10px;max-height:190px;overflow:auto;' +
-      'background:' + THEME.bgNested + ';border:1px solid ' + THEME.border + ';border-radius:6px;' +
+      'background:' + THEME.bgMain + ';border:1px solid ' + THEME.border + ';border-radius:6px;' +
       'font:10.5px/1.6 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;color:' + THEME.textSecondary;
     const logBtn = mkBtn(L('Показать журнал', 'Show Log'), 'secondary');
     logBtn.onclick = () => {
@@ -2125,8 +2211,22 @@
         logBtn.textContent = L('Показать журнал', 'Show Log');
       }
     };
-    box.appendChild(logBtn);
-    box.appendChild(logBox);
+    utilBody.appendChild(logBtn);
+    utilBody.appendChild(logBox);
+
+    // Небольшая постоянная ссылка: не собирает логи, не отправляет данные и
+    // не влияет на проверку. В Telegram пользователь приходит только по клику.
+    const supportLink = document.createElement('a');
+    supportLink.href = 'https://t.me/edlevina';
+    supportLink.target = '_blank';
+    supportLink.rel = 'noopener noreferrer';
+    supportLink.textContent = L('Написать автору оригинала (Telegram)', 'Contact Original Author (Telegram)');
+    supportLink.className = 'ck-btn ck-btn-secondary';
+    supportLink.style.cssText = 'display:block;text-decoration:none;font-size:11px;margin-top:6px;padding:6px 8px';
+    utilBody.appendChild(supportLink);
+
+    utilDetails.appendChild(utilBody);
+    box.appendChild(utilDetails);
 
     imHereBtn = mkBtn(L('Я тут — хватит звать', "I'm Here — Stop Calling"), 'success');
     imHereBtn.style.display = 'none';
@@ -2143,17 +2243,6 @@
       'Autofills slots & contact info. SMS code & Confirmar are up to you. v' + SCRIPT_VER
     );
     box.appendChild(hint);
-
-    // Небольшая постоянная ссылка: не собирает логи, не отправляет данные и
-    // не влияет на проверку. В Telegram пользователь приходит только по клику.
-    const supportLink = document.createElement('a');
-    supportLink.href = 'https://t.me/edlevina';
-    supportLink.target = '_blank';
-    supportLink.rel = 'noopener noreferrer';
-    supportLink.textContent = L('Написать автору оригинала (Telegram)', 'Contact Original Author (Telegram)');
-    supportLink.className = 'ck-btn ck-btn-secondary';
-    supportLink.style.cssText = 'display:block;text-decoration:none;font-size:11px;margin-top:6px;padding:6px 8px';
-    box.appendChild(supportLink);
     document.body.appendChild(box);
     renderStats();
   }
