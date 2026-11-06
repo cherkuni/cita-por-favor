@@ -1110,18 +1110,41 @@
   function status(msg, color) {
     if (statusEl) { statusEl.textContent = msg; statusEl.style.color = mapThemeColor(color); }
   }
+  function rhythmRateShort() {
+    if (RUN.mode === 'hourly') {
+      return L(RUN.hourlyChecks + '×/' + RUN.hourlyWindowMin + 'м', RUN.hourlyChecks + '×/' + RUN.hourlyWindowMin + 'm');
+    }
+    return formatIntervalRange(RUN.intervalMinMin, RUN.intervalMaxMin) + L('м', 'm');
+  }
+  function paceLineSummary() {
+    if (boostMode()) {
+      return L('Форсаж: каждые ' + RUN.boostSec + ' сек', 'Boost: every ' + RUN.boostSec + 's');
+    }
+    if (RUN.mode === 'hourly') {
+      return L(
+        'Ритм: ' + RUN.hourlyChecks + '× в первые ' + RUN.hourlyWindowMin + ' мин/ч',
+        'Pace: ' + RUN.hourlyChecks + '× in first ' + RUN.hourlyWindowMin + 'm/hr'
+      );
+    }
+    const r = formatIntervalRange(RUN.intervalMinMin, RUN.intervalMaxMin);
+    const hot = String(RUN.hotHours || '').trim()
+      ? L(' (пик ' + formatIntervalRange(RUN.hotIntervalMinSec, RUN.hotIntervalMaxSec) + 'с)', ' (peak ' + formatIntervalRange(RUN.hotIntervalMinSec, RUN.hotIntervalMaxSec) + 's)')
+      : '';
+    return L('Ритм: каждые ' + r + ' мин' + hot, 'Pace: every ' + r + ' min' + hot);
+  }
   // строка режима (●): v9.2 — живёт в секции «Ритмичная проверка», рядом с
   // кнопкой старт/стоп; наверху панели осталась только строка активности
   function renderState() {
     const isBoost = boostMode();
+    const paceTxt = paceLineSummary();
     if (stateEl) {
       let txt, color;
       if (foundMode()) { txt = L('● СИТЫ НАЙДЕНЫ — доделываем вместе', '● SLOTS FOUND — finishing together'); color = THEME.success; }
       else if (stepMode()) { txt = L('● Пошаговый режим — ритм заморожен', '● Step-by-step mode — rhythm paused'); color = THEME.warning; }
-      else if (boostRun()) { txt = L('● Форсаж: каждые ' + RUN.boostSec + ' сек', '● Boost mode: every ' + RUN.boostSec + ' sec'); color = THEME.warning; }
-      else if (rhythmOn()) { txt = L('● Ритмичная проверка идёт', '● Automatic check running'); color = THEME.success; }
-      else if (onceMode()) { txt = L('● Разовая проверка…', '● Single check running…'); color = THEME.accent; }
-      else { txt = L('● Проверка выключена', '● Checker is OFF'); color = THEME.textSecondary; }
+      else if (boostRun()) { txt = L('● Идёт проверка · ', '● Running · ') + paceTxt; color = THEME.warning; }
+      else if (rhythmOn()) { txt = L('● Идёт проверка · ', '● Running · ') + paceTxt; color = THEME.success; }
+      else if (onceMode()) { txt = L('● Разовая проверка… · ', '● Single check… · ') + paceTxt; color = THEME.accent; }
+      else { txt = L('● Выкл · ', '● OFF · ') + paceTxt; color = THEME.textSecondary; }
       stateEl.textContent = txt;
       stateEl.style.color = color;
     }
@@ -1135,6 +1158,7 @@
       boostChipEl.className = 'ck-seg-chip' + (isBoost ? ' ck-active-boost' : '');
       rhythmChipEl.setAttribute('aria-pressed', !isBoost ? 'true' : 'false');
       boostChipEl.setAttribute('aria-pressed', isBoost ? 'true' : 'false');
+      rhythmChipEl.textContent = L('⏱ Ритм (', '⏱ Rhythm (') + rhythmRateShort() + ')';
       boostChipEl.textContent = L('⚡ Форсаж (' + RUN.boostSec + 'с)', '⚡ Boost (' + RUN.boostSec + 's)');
     }
     if (rhythmAccHdr && boostAccHdr) {
